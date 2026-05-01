@@ -11,6 +11,7 @@ on:
 permissions:
   contents: read
   packages: write
+  actions: read
 
 jobs:
   detect:
@@ -22,12 +23,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
+
+      - name: Get last successful commit
+        id: last_success
+        uses: nrwl/nx-set-shas@v4
+        with:
+          main-branch-name: main
 
       - name: Detect changed images
         id: changed
         run: |
-          CHANGED=$(git diff --name-only HEAD~1 HEAD | grep 'Dockerfile' | xargs -I{} dirname {} | jq -R . | jq -sc .)
+          # Diff between the last success and current HEAD
+          BASE_SHA=${{ steps.last_success.outputs.base }}
+          CHANGED=$(git diff --name-only $BASE_SHA HEAD | grep 'Dockerfile' | xargs -I{} dirname {} | jq -R . | jq -sc .)
           echo "images=$CHANGED" >> $GITHUB_OUTPUT
 
   build:
@@ -49,10 +58,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Lowercase Owner Name
+        id: owner_name
+        run: echo "owner=${OWNER,,}" >> $GITHUB_OUTPUT
+        env:
+          OWNER: '${{ github.repository_owner }}'
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.image }}
           file: ${{ matrix.image }}/Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository_owner_lower_case }}/${{ matrix.image }}:latest
+          tags: ghcr.io/${{ steps.owner_name.outputs.owner }}/${{ matrix.image }}:latest
+
