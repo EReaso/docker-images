@@ -18,4 +18,4 @@ RUN pip install --no-cache-dir uv
 RUN uv pip install --system playwright && \
     playwright install-deps chromium && \
     playwright install chromium && \
-    uv pip uninstall --system playwright
+    uv pip uninstall --system playwright # Only keep browser and deps
