@@ -1,0 +1,58 @@
+name: Build Changed Images
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '*/Dockerfile'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    if: github.server_url == 'https://github.com'
+    outputs:
+      images: ${{ steps.changed.outputs.images }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed images
+        id: changed
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD | grep 'Dockerfile' | xargs -I{} dirname {} | jq -R . | jq -sc .)
+          echo "images=$CHANGED" >> $GITHUB_OUTPUT
+
+  build:
+    needs: detect
+    if: github.server_url == 'https://github.com' && needs.detect.outputs.images != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image: ${{ fromJson(needs.detect.outputs.images) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.image }}
+          file: ${{ matrix.image }}/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:latest
