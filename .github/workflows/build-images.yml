@@ -27,7 +27,7 @@ jobs:
       - name: Detect changed images
         id: changed
         run: |
-          CHANGED=$(git diff --name-only HEAD~1 HEAD | grep 'Dockerfile' | xargs -I{} dirname {} | jq -R . | jq -sc .)
+          CHANGED=$(git diff --name-only HEAD~1 HEAD | grep 'Dockerfile|.github/workflows/build-images.yml' | xargs -I{} dirname {} | jq -R . | jq -sc .)
           echo "images=$CHANGED" >> $GITHUB_OUTPUT
 
   build:
