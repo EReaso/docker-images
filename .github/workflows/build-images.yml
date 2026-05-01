@@ -9,9 +9,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
-  actions: read
 
 jobs:
   detect:
@@ -25,18 +24,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get last successful commit
-        id: last_success
-        uses: nrwl/nx-set-shas@v4
-        with:
-          main-branch-name: main
-
       - name: Detect changed images
         id: changed
         run: |
-          # Diff between the last success and current HEAD
-          BASE_SHA=${{ steps.last_success.outputs.base }}
-          CHANGED=$(git diff --name-only $BASE_SHA HEAD | grep 'Dockerfile' | xargs -I{} dirname {} | jq -R . | jq -sc .)
+          if git rev-parse ci/last-success >/dev/null 2>&1; then
+            BASE=$(git rev-parse ci/last-success)
+          else
+            BASE=$(git rev-list --max-parents=0 HEAD)
+          fi
+          CHANGED=$(git diff --name-only $BASE HEAD | grep 'Dockerfile' | xargs -I{} dirname {} | jq -R . | jq -sc .)
           echo "images=$CHANGED" >> $GITHUB_OUTPUT
 
   build:
@@ -58,11 +54,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Lowercase Owner Name
-        id: owner_name
+      - name: Lowercase owner
+        id: owner
         run: echo "owner=${OWNER,,}" >> $GITHUB_OUTPUT
         env:
-          OWNER: '${{ github.repository_owner }}'
+          OWNER: ${{ github.repository_owner }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -70,5 +66,21 @@ jobs:
           context: ${{ matrix.image }}
           file: ${{ matrix.image }}/Dockerfile
           push: true
-          tags: ghcr.io/${{ steps.owner_name.outputs.owner }}/${{ matrix.image }}:latest
+          tags: ghcr.io/${{ steps.owner.outputs.owner }}/${{ matrix.image }}:latest
 
+  tag-success:
+    needs: build
+    if: github.server_url == 'https://github.com' && success()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update last-success tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f ci/last-success
+          git push origin -f refs/tags/ci/last-success
